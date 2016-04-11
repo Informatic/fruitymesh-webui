@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+<p>
+<form action="{{ url_for('action') }}">
+<div class="form-inline pull-left">
+  <div class="input-group">
+    <span class="input-group-btn">
+      <button class="btn btn-primary" type="button">Action</button>
+    </span>
+    <input type="text" name="action" class="form-control">
+  </div>
+</div>
+
+<div class="btn-group pull-right">
+<a class="btn btn-primary" href="{{url_for('update')}}">Update</a>
+<a class="btn btn-info" href="{{url_for('cmd')}}?q=set_active 0 status on">Enable RSSI</a>
+<a class="btn btn-warning" href="{{url_for('cmd')}}?q=set_active 0 status off">Disable RSSI</a>
+</div>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Node ID</th>
+            <th>Bluetooth Address</th>
+            <th>Serial</th>
+            <th>Chip ID</th>
+            <th>Device Type</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for node_id, node in nodes.items() %}
+        <tr>
+            <td>
+              <label>
+                <input type="checkbox" name="nodes[{{ node_id }}]" value="1" />
+                {% if plugged_in == node_id %}
+                <b>{{node_id}}</b> <small>(plugged in)</small>
+                {% else %}
+                {{node_id}}
+                {% endif %}
+              </label>
+            </td>
+            <td>{{node.accessAddress}}</td>
+            <td>{{node.serialNumber}}</td>
+            <td>{{node.chipId}}</td>
+            <td>{{node.deviceType}}</td>
+            <td>
+              <a class="btn btn-success btn-xs" href="{{url_for('cmd')}}?q=action {{node_id}} io led on">LED ON</a>
+              <a class="btn btn-danger btn-xs" href="{{url_for('cmd')}}?q=action {{node_id}} io led off">LED OFF</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</form>
+
+<div id="mynetwork" style="min-height: 500px"></div>
+
+<script type="text/javascript" src="http://visjs.org/dist/vis.js"></script>
+<script type="text/javascript">
+  // create an array with nodes
+  var nodes = new vis.DataSet([
+    {% for node_id, node in nodes.items() %}
+    {id: {{node_id}}, label: '{{node_id}}\n{{node.serialNumber}}'
+      {% if plugged_in == node_id %}
+      , borderWidth: 2, color: '#ccc',
+      {% endif %}},
+    {% endfor %}
+  ]);
+
+  // create an array with edges
+  var edges = new vis.DataSet([
+    {% for node_id, node in nodes_connections.items() %}
+    {% for p, rssi in zip(node.partners, node.rssiValues)[1:] %}
+    {% if p != 0 %}
+    {from: {{node_id}}, to: {{p}}, arrows: 'to', label: 'rssi: {{rssi}}'},
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  ]);
+
+  // create a network
+  var container = document.getElementById('mynetwork');
+  var data = {
+    nodes: nodes,
+    edges: edges
+  };
+
+var options = {
+  "height": "500px",
+  "autoResize": true,
+  "edges": {
+    "smooth": {
+      "forceDirection": "none"
+    }
+  },
+  "physics": {
+    "barnesHut": {
+      "gravitationalConstant": -5300,
+      "centralGravity": 0.1,
+      "springLength": 260
+    },
+    "minVelocity": 0.75
+  },
+  "nodes": {
+    "font": {
+      "size": 14,
+      "face": "Source Sans Pro",
+      "color": "#555",
+    },
+    "color": "#f5f5f5",
+    "shape": "circle",
+  },
+  "edges": {
+    "font": {
+      "align": "middle",
+    },
+  },
+}
+
+  var network = new vis.Network(container, data, options);
+</script>
+</p>
+{% endblock %}
