@@ -1,14 +1,14 @@
 import json
 import logging
-import serial
 import threading
-
-import flask
+import argparse
 import time
+
+import serial
+import flask
 
 logging.basicConfig(level=logging.DEBUG)
 
-PORT = '/dev/serial/by-id/usb-SEGGER_J-Link_XXXXXXXXXXXX-if00'
 
 
 class ClientThread(threading.Thread):
@@ -18,7 +18,10 @@ class ClientThread(threading.Thread):
     nodes = dict()
     nodes_connections = dict()
     plugged_in_id = None
+
     last_update = None
+    update_interval = 30
+
     decoder = None
 
     def run(self):
@@ -27,7 +30,7 @@ class ClientThread(threading.Thread):
         while True:
             try:
                 if not self.ser:
-                    self.ser = serial.Serial(PORT, 38400, timeout=3)
+                    self.ser = serial.Serial(self.port, 38400, timeout=3)
 
                 self.process()
             except:
@@ -41,13 +44,21 @@ class ClientThread(threading.Thread):
                 self.ser = None
 
     def process(self):
-        l = self.ser.readline()
+        l = self.ser.readline().strip()
 
-        print '>', len(l), repr(l)
+        if not l:
+            return
+
+        print 'recv:', l
+
         try:
             # FIXME parse multiple messages
+            if l.find('{') == -1:
+                return
+
             l = l[l.find('{'):]
             msg, _ = self.decoder.raw_decode(l)
+            print '>', msg
             if msg.get('type') == 'device_info':
                 msg['lastSeen'] = time.time()
                 self.nodes[msg['nodeId']] = msg
@@ -56,20 +67,23 @@ class ClientThread(threading.Thread):
             elif msg.get('type') == 'plugged_in':
                 self.plugged_in_id = msg['nodeId']
         except:
-            logging.exception('gnuj')
+            logging.exception('Shit broke')
 
-        if not self.last_update or time.time() - self.last_update > 30:
+        if not self.last_update or time.time() - self.last_update > \
+                self.update_interval:
             self.last_update = time.time()
+            self.do_update()
 
-            self.nodes = dict()
-            self.nodes_connections = dict()
-            ct.ser.write('\r\r')
-            time.sleep(0.5)
-            ct.ser.write('action 0 status get_device_info\r')
-            time.sleep(0.5)
-            ct.ser.write('action 0 status get_connections\r')
-            time.sleep(0.5)
-            ct.ser.write('get_plugged_in\r')
+    def do_update(self):
+        self.nodes = dict()
+        self.nodes_connections = dict()
+        ct.ser.write('\r\r')
+        time.sleep(0.5)
+        ct.ser.write('action 0 status get_device_info\r')
+        time.sleep(0.5)
+        ct.ser.write('action 0 status get_connections\r')
+        time.sleep(0.5)
+        ct.ser.write('get_plugged_in\r')
 
 ct = ClientThread()
 
@@ -88,12 +102,7 @@ def index():
 
 @app.route('/update')
 def update():
-    ct.nodes = {}
-    ct.nodes_connections = {}
-    ct.ser.write('action 0 status get_device_info\r')
-    time.sleep(0.5)
-    ct.ser.write('action 0 status get_connections\r')
-    time.sleep(0.5)
+    ct.do_update()
     return flask.redirect('/')
 
 
@@ -120,8 +129,15 @@ def nodes():
 
 
 def main():
+    parser = argparse.ArgumentParser(description='FruityMesh web interface')
+    parser.add_argument('--host', default='127.0.0.1', help='HTTP host')
+    parser.add_argument('--port', type=int, default=5000, help='HTTP port')
+    parser.add_argument('--serial', default='/dev/ttyACM0', help='Serial device')
+    args = parser.parse_args()
+
+    ct.port = args.serial
     ct.start()
-    app.run()
+    app.run(args.host, args.port)
 
 
 if __name__ == "__main__":
